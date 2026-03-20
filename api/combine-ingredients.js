@@ -68,6 +68,7 @@ export default async function handler(req, res) {
 
     for (const row of notionData.results || []) {
       const p = row.properties || {};
+        return res.status(200).json({ first_row: notionData.results?.[0] || null });
 
       const ingredientRelation = p["Ingredient"]?.relation || [];
       const ingredientId = ingredientRelation[0]?.id || "";
