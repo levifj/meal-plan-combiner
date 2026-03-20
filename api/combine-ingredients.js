@@ -24,10 +24,9 @@ export default async function handler(req, res) {
     if (!recipeIds.length) {
       return res.status(200).json({
         weekly_meal_plan_id: weeklyMealPlanId,
-        recipe_ids_csv: recipeIdsCsv,
-        recipe_ids: [],
-        recipe_count: 0,
-        notion_results_count: 0
+        grouped_categories: {},
+        shopping_lines: [],
+        shopping_list_html: "",
       });
     }
 
@@ -58,13 +57,109 @@ export default async function handler(req, res) {
 
     const notionData = await notionResponse.json();
 
+    if (!notionResponse.ok) {
+      return res.status(400).json({
+        error: "Notion query failed",
+        notion_data: notionData
+      });
+    }
+
+    const combined = new Map();
+
+    for (const row of notionData.results || []) {
+      const p = row.properties || {};
+
+      const ingredientRelation = p["Ingredient"]?.relation || [];
+      const ingredientId = ingredientRelation[0]?.id || "";
+
+      const ingredientName =
+        p["Ingredient Name (text)"]?.rich_text?.[0]?.plain_text ||
+        p["Ingredient Name (text)"]?.title?.[0]?.plain_text ||
+        "Unknown ingredient";
+
+      const quantity = Number(p["Quantity"]?.number || 0);
+      const unit = p["Unit"]?.select?.name || "";
+
+      const category =
+        p["Shopping Category"]?.select?.name ||
+        p["Shopping Category"]?.multi_select?.[0]?.name ||
+        "Other";
+
+      if (!ingredientName) continue;
+
+      const key = `${ingredientId || ingredientName}__${unit}__${category}`;
+
+      if (!combined.has(key)) {
+        combined.set(key, {
+          ingredient_id: ingredientId,
+          name: ingredientName,
+          quantity: 0,
+          unit,
+          category,
+        });
+      }
+
+      combined.get(key).quantity += quantity;
+    }
+
+    const groupedCategories = {};
+
+    for (const item of combined.values()) {
+      if (!groupedCategories[item.category]) {
+        groupedCategories[item.category] = [];
+      }
+
+      groupedCategories[item.category].push({
+        name: item.name,
+        quantity: Number(item.quantity.toFixed(2)),
+        unit: item.unit,
+      });
+    }
+
+    const categoryOrder = [
+      "Produce",
+      "Meat",
+      "Dairy",
+      "Frozen",
+      "Canned",
+      "Dry",
+      "Baking",
+      "Spices",
+      "Other",
+    ];
+
+    const orderedCategoryNames = [
+      ...categoryOrder.filter((c) => groupedCategories[c]),
+      ...Object.keys(groupedCategories)
+        .filter((c) => !categoryOrder.includes(c))
+        .sort(),
+    ];
+
+    const shoppingLines = [];
+    const shoppingListHtmlParts = [];
+
+    for (const category of orderedCategoryNames) {
+      shoppingLines.push(category);
+      shoppingListHtmlParts.push(`<h3>${escapeHtml(category)}</h3><ul>`);
+
+      groupedCategories[category].sort((a, b) => a.name.localeCompare(b.name));
+
+      for (const item of groupedCategories[category]) {
+        const qty = formatQty(item.quantity);
+        const line = `${qty}${item.unit ? ` ${item.unit}` : ""} ${item.name}`.trim();
+
+        shoppingLines.push(line);
+        shoppingListHtmlParts.push(`<li>${escapeHtml(line)}</li>`);
+      }
+
+      shoppingListHtmlParts.push(`</ul>`);
+    }
+
     return res.status(200).json({
       weekly_meal_plan_id: weeklyMealPlanId,
-      recipe_ids_csv: recipeIdsCsv,
-      recipe_ids: recipeIds,
-      recipe_count: recipeIds.length,
-      notion_results_count: notionData.results ? notionData.results.length : 0,
-      notion_data: notionData
+      grouped_categories: groupedCategories,
+      shopping_lines: shoppingLines,
+      shopping_list_html: shoppingListHtmlParts.join(""),
     });
   } catch (error) {
     return res.status(400).json({
@@ -72,4 +167,18 @@ export default async function handler(req, res) {
       details: error.message,
     });
   }
+}
+
+function formatQty(value) {
+  if (Number.isInteger(value)) return String(value);
+  return String(Number(value.toFixed(2)));
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
