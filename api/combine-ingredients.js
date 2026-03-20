@@ -74,8 +74,7 @@ export default async function handler(req, res) {
       const ingredientId = ingredientRelation[0]?.id || "";
 
       const ingredientName =
-        p["Ingredient Name (text)"]?.rich_text?.[0]?.plain_text ||
-        p["Ingredient Name (text)"]?.title?.[0]?.plain_text ||
+        p["Ingredient Name"]?.rollup?.array?.[0]?.title?.[0]?.plain_text ||
         "Unknown ingredient";
 
       const quantity = Number(p["Quantity"]?.number || 0);
