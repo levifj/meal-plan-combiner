@@ -32,7 +32,7 @@ export default async function handler(req, res) {
     }
 
     const orFilters = recipeIds.map((id) => ({
-      property: "Recipe",
+      property: "Recipes",
       relation: {
         contains: id
       }
