@@ -76,8 +76,11 @@ export default async function handler(req, res) {
         p["Ingredient Name"]?.rollup?.array?.[0]?.title?.[0]?.plain_text ||
         "Unknown ingredient";
 
-      const quantity = Number(p["Quantity"]?.number || 0);
-      if (quantity <= 0) continue;
+      const rawQty = p["Quantity"]?.number;
+      const quantity = rawQty !== null && rawQty !== undefined ? Number(rawQty) : null;
+
+      // Skip only if quantity is explicitly 0
+      if (quantity === 0) continue;
 
       const unit = p["Unit"]?.select?.name || "";
 
@@ -100,7 +103,7 @@ export default async function handler(req, res) {
         });
       }
 
-      combined.get(key).quantity += quantity;
+      combined.get(key).quantity += quantity || 0;
     }
 
     const groupedCategories = {};
@@ -146,8 +149,9 @@ export default async function handler(req, res) {
       groupedCategories[category].sort((a, b) => a.name.localeCompare(b.name));
 
       for (const item of groupedCategories[category]) {
-        const qty = formatQty(item.quantity);
-        const line = `${qty}${item.unit ? ` ${item.unit}` : ""} ${item.name}`.trim();
+      const hasQty = item.quantity > 0;
+      const qty = hasQty ? formatQty(item.quantity) : "";
+      const line = `${qty}${qty && item.unit ? ` ${item.unit}` : ""} ${item.name}`.trim();
 
         shoppingLines.push(line);
         shoppingListHtmlParts.push(`<li>${escapeHtml(line)}</li>`);
