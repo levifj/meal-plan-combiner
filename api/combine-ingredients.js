@@ -77,6 +77,8 @@ export default async function handler(req, res) {
         "Unknown ingredient";
 
       const quantity = Number(p["Quantity"]?.number || 0);
+      if (quantity <= 0) continue;
+
       const unit = p["Unit"]?.select?.name || "";
 
       const category =
