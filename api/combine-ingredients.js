@@ -3,61 +3,127 @@ export default async function handler(req, res) {
     const body =
       typeof req.body === "string" ? JSON.parse(req.body) : req.body || {};
 
-    const recipeIdsCsv = body.recipe_ids_csv || "";
-    const recipeIds = recipeIdsCsv
-      .split(",")
-      .map((id) => id.trim())
-      .filter(Boolean);
+    const weeklyMealPlanId = body.weekly_meal_plan_id || "";
+    const ingredients = Array.isArray(body.ingredients) ? body.ingredients : [];
 
-    const notionApiKey = process.env.NOTION_API_KEY;
-    const recipesDbId = process.env.RECIPES_DB_ID;
+    const combined = new Map();
 
-    if (!notionApiKey) {
-      return res.status(400).json({ error: "Missing NOTION_API_KEY" });
+    for (const item of ingredients) {
+      const p = item?.properties_value || {};
+
+      const ingredientId = p?.Ingredient?.[0]?.id || "";
+
+      const ingredientName =
+        p?.["Ingredient Name"]?.rollup?.array?.[0]?.title?.[0]?.plain_text ||
+        "Unknown ingredient";
+
+      const quantity = Number(p?.Quantity || 0);
+
+      const unit = p?.Unit?.select?.name || "";
+
+      const category =
+        p?.["Shopping Category"]?.select?.name ||
+        p?.["Shopping Category"]?.multi_select?.[0]?.name ||
+        "Other";
+
+      // ✅ skip junk + zero qty
+      if (!ingredientId || !ingredientName || quantity <= 0) continue;
+
+      const key = `${ingredientId}__${unit}`;
+
+      if (!combined.has(key)) {
+        combined.set(key, {
+          ingredient_id: ingredientId,
+          name: ingredientName,
+          quantity: 0,
+          unit,
+          category,
+        });
+      }
+
+      combined.get(key).quantity += quantity;
     }
 
-    if (!recipesDbId) {
-      return res.status(400).json({ error: "Missing RECIPES_DB_ID" });
-    }
+    const groupedCategories = {};
 
-    const recipes = [];
+    for (const item of combined.values()) {
+      if (!groupedCategories[item.category]) {
+        groupedCategories[item.category] = [];
+      }
 
-    for (const recipeId of recipeIds) {
-      const response = await fetch(
-        `https://api.notion.com/v1/pages/${recipeId}`,
-        {
-          method: "GET",
-          headers: {
-            Authorization: `Bearer ${notionApiKey}`,
-            "Notion-Version": "2022-06-28"
-          }
-        }
-      );
-
-      const data = await response.json();
-      const p = data.properties || {};
-
-      const name =
-        p["Name"]?.title?.[0]?.plain_text || "Unnamed recipe";
-
-      const instructions =
-        p["Instructions"]?.rich_text?.[0]?.plain_text || "";
-
-      recipes.push({
-        id: recipeId,
-        name,
-        instructions
+      groupedCategories[item.category].push({
+        name: item.name,
+        quantity: Number(item.quantity.toFixed(2)),
+        unit: item.unit,
       });
     }
 
+    const categoryOrder = [
+      "Produce",
+      "Meat",
+      "Dairy",
+      "Frozen",
+      "Canned",
+      "Dry",
+      "Baking",
+      "Spices",
+      "Other",
+    ];
+
+    const orderedCategoryNames = [
+      ...categoryOrder.filter((c) => groupedCategories[c]),
+      ...Object.keys(groupedCategories)
+        .filter((c) => !categoryOrder.includes(c))
+        .sort(),
+    ];
+
+    const shoppingLines = [];
+    const shoppingListHtmlParts = [];
+
+    for (const category of orderedCategoryNames) {
+      shoppingLines.push(category);
+      shoppingListHtmlParts.push(`<h3>${escapeHtml(category)}</h3><ul>`);
+
+      groupedCategories[category].sort((a, b) =>
+        a.name.localeCompare(b.name)
+      );
+
+      for (const item of groupedCategories[category]) {
+        const qty = formatQty(item.quantity);
+
+        const line = `${qty}${item.unit ? ` ${item.unit}` : ""} ${item.name}`.trim();
+
+        shoppingLines.push(line);
+        shoppingListHtmlParts.push(`<li>${escapeHtml(line)}</li>`);
+      }
+
+      shoppingListHtmlParts.push(`</ul>`);
+    }
+
     return res.status(200).json({
-      recipe_count: recipes.length,
-      recipes
+      weekly_meal_plan_id: weeklyMealPlanId,
+      grouped_categories: groupedCategories,
+      shopping_lines: shoppingLines,
+      shopping_list_html: shoppingListHtmlParts.join(""),
     });
   } catch (error) {
     return res.status(400).json({
-      error: "Failed to build recipes payload",
+      error: "Invalid request",
       details: error.message,
     });
   }
+}
+
+function formatQty(value) {
+  if (Number.isInteger(value)) return String(value);
+  return String(Number(value.toFixed(2)));
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
