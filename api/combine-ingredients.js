@@ -15,19 +15,27 @@ export default async function handler(req, res) {
 
       const ingredientName =
         p?.["Ingredient Name"]?.rollup?.array?.[0]?.title?.[0]?.plain_text ||
+        p?.["Ingredient Name (text)"]?.string ||
         "Unknown ingredient";
 
-      const quantity = Number(p?.Quantity || 0);
+      const rawQty = p?.Quantity;
+      const quantity =
+        rawQty !== null && rawQty !== undefined && rawQty !== ""
+          ? Number(rawQty)
+          : null;
 
-      const unit = p?.Unit?.select?.name || "";
+      const unit = p?.Unit?.name || "";
 
       const category =
+        p?.["Shopping Category"]?.array?.[0]?.select?.name ||
         p?.["Shopping Category"]?.select?.name ||
         p?.["Shopping Category"]?.multi_select?.[0]?.name ||
         "Other";
 
-      // ✅ skip junk + zero qty
-      if (!ingredientId || !ingredientName || quantity <= 0) continue;
+      if (!ingredientId || !ingredientName) continue;
+
+      // Skip only explicit zero quantities
+      if (quantity === 0) continue;
 
       const key = `${ingredientId}__${unit}`;
 
@@ -41,7 +49,7 @@ export default async function handler(req, res) {
         });
       }
 
-      combined.get(key).quantity += quantity;
+      combined.get(key).quantity += quantity || 0;
     }
 
     const groupedCategories = {};
@@ -60,12 +68,15 @@ export default async function handler(req, res) {
 
     const categoryOrder = [
       "Produce",
+      "Protein",
       "Meat",
       "Dairy",
       "Frozen",
       "Canned",
+      "Pantry",
       "Dry",
       "Baking",
+      "Seasonings",
       "Spices",
       "Other",
     ];
@@ -89,9 +100,9 @@ export default async function handler(req, res) {
       );
 
       for (const item of groupedCategories[category]) {
-        const qty = formatQty(item.quantity);
-
-        const line = `${qty}${item.unit ? ` ${item.unit}` : ""} ${item.name}`.trim();
+        const hasQty = item.quantity > 0;
+        const qty = hasQty ? formatQty(item.quantity) : "";
+        const line = `${qty}${qty && item.unit ? ` ${item.unit}` : ""} ${item.name}`.trim();
 
         shoppingLines.push(line);
         shoppingListHtmlParts.push(`<li>${escapeHtml(line)}</li>`);
