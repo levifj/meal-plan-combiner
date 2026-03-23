@@ -83,8 +83,7 @@ export default async function handler(req, res) {
       const unit = p["Unit"]?.select?.name || "";
 
       const category =
-        p["Shopping Category"]?.rollup?.array?.[0]?.select?.name ||
-        "Other";
+        p["Shopping Category"]?.rollup?.array?.[0]?.select?.name || "Other";
 
       if (!ingredientId || !ingredientName) continue;
 
@@ -147,11 +146,12 @@ export default async function handler(req, res) {
 
     for (const category of orderedCategoryNames) {
       shoppingLines.push(category);
-      shoppingListHtmlParts.push(`<h3>${escapeHtml(category)}</h3><ul>`);
 
       groupedCategories[category].sort((a, b) =>
         a.name.localeCompare(b.name)
       );
+
+      const listItems = [];
 
       for (const item of groupedCategories[category]) {
         const hasQty = item.quantity > 0;
@@ -159,10 +159,17 @@ export default async function handler(req, res) {
         const line = `${qty}${qty && item.unit ? ` ${item.unit}` : ""} ${item.name}`.trim();
 
         shoppingLines.push(line);
-        shoppingListHtmlParts.push(`<li>${escapeHtml(line)}</li>`);
+        listItems.push(`<li>${escapeHtml(line)}</li>`);
       }
 
-      shoppingListHtmlParts.push(`</ul>`);
+      shoppingListHtmlParts.push(`
+        <div class="shopping-category">
+          <h3>${escapeHtml(category)}</h3>
+          <ul>
+            ${listItems.join("")}
+          </ul>
+        </div>
+      `);
     }
 
     return res.status(200).json({
