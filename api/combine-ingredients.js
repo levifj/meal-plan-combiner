@@ -27,7 +27,9 @@ export default async function handler(req, res) {
         grouped_categories: {},
         shopping_lines: [],
         shopping_list_html: "",
-        shopping_list_html_chunks: [],
+        shopping_list_html_1: "",
+        shopping_list_html_2: "",
+        shopping_list_html_3: "",
       });
     }
 
@@ -167,14 +169,16 @@ export default async function handler(req, res) {
     }
 
     const shoppingListHtml = shoppingListHtmlParts.join("");
-    const shoppingListHtmlChunks = chunkString(shoppingListHtml, 2000);
+    const htmlChunks = chunkString(shoppingListHtml, 1900);
 
     return res.status(200).json({
       weekly_meal_plan_id: weeklyMealPlanId,
       grouped_categories: groupedCategories,
       shopping_lines: shoppingLines,
       shopping_list_html: shoppingListHtml,
-      shopping_list_html_chunks: shoppingListHtmlChunks,
+      shopping_list_html_1: htmlChunks[0] || "",
+      shopping_list_html_2: htmlChunks[1] || "",
+      shopping_list_html_3: htmlChunks[2] || "",
     });
   } catch (error) {
     return res.status(400).json({
