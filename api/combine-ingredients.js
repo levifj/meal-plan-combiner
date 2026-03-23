@@ -27,6 +27,7 @@ export default async function handler(req, res) {
         grouped_categories: {},
         shopping_lines: [],
         shopping_list_html: "",
+        shopping_list_html_chunks: [],
       });
     }
 
@@ -86,8 +87,6 @@ export default async function handler(req, res) {
         p["Shopping Category"]?.rollup?.array?.[0]?.select?.name || "Other";
 
       if (!ingredientId || !ingredientName) continue;
-
-      // Skip only explicit zero quantities
       if (quantity === 0) continue;
 
       const key = `${ingredientId}__${unit}__${category}`;
@@ -162,21 +161,20 @@ export default async function handler(req, res) {
         listItems.push(`<li>${escapeHtml(line)}</li>`);
       }
 
-      shoppingListHtmlParts.push(`
-        <div class="shopping-category">
-          <h3>${escapeHtml(category)}</h3>
-          <ul>
-            ${listItems.join("")}
-          </ul>
-        </div>
-      `);
+      shoppingListHtmlParts.push(
+        `<div class="shopping-category"><h3>${escapeHtml(category)}</h3><ul>${listItems.join("")}</ul></div>`
+      );
     }
+
+    const shoppingListHtml = shoppingListHtmlParts.join("");
+    const shoppingListHtmlChunks = chunkString(shoppingListHtml, 2000);
 
     return res.status(200).json({
       weekly_meal_plan_id: weeklyMealPlanId,
       grouped_categories: groupedCategories,
       shopping_lines: shoppingLines,
-      shopping_list_html: shoppingListHtmlParts.join(""),
+      shopping_list_html: shoppingListHtml,
+      shopping_list_html_chunks: shoppingListHtmlChunks,
     });
   } catch (error) {
     return res.status(400).json({
@@ -198,4 +196,12 @@ function escapeHtml(str) {
     .replaceAll(">", "&gt;")
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
+}
+
+function chunkString(str, maxLength) {
+  const chunks = [];
+  for (let i = 0; i < str.length; i += maxLength) {
+    chunks.push(str.slice(i, i + maxLength));
+  }
+  return chunks;
 }
