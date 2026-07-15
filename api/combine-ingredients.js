@@ -91,8 +91,7 @@ let unitForCombine = converted.unit;
 
 if (groceryProduce.includes(normalizedName)) {unitForCombine = "whole";}
 
-const key = ${normalizedNameForCombine}__${unitForCombine}__${normalizedCategory};
-
+const key = `${normalizedNameForCombine}__${unitForCombine}__${normalizedCategory}`;
   if (!combined.has(key)) {
     combined.set(key, {
       name: getDisplayName(normalizedNameForCombine, ingredientName),
