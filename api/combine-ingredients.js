@@ -1,11 +1,10 @@
-module.exports = async function handler(req, res) {
+export default async function handler(req, res) {
   try {
     const body =
       typeof req.body === "string" ? JSON.parse(req.body) : req.body || {};
 
     const weeklyMealPlanId = body.weekly_meal_plan_id || "";
     const recipeIdsCsv = body.recipe_ids_csv || "";
-
     const recipeIds = recipeIdsCsv
       .split(",")
       .map((id) => id.trim())
@@ -15,22 +14,17 @@ module.exports = async function handler(req, res) {
     const recipeIngredientsDbId = process.env.RECIPE_INGREDIENTS_DB_ID;
 
     if (!notionApiKey) {
-      return res.status(400).json({
-        error: "Missing NOTION_API_KEY",
-      });
+      return res.status(400).json({ error: "Missing NOTION_API_KEY" });
     }
 
     if (!recipeIngredientsDbId) {
-      return res.status(400).json({
-        error: "Missing RECIPE_INGREDIENTS_DB_ID",
-      });
+      return res.status(400).json({ error: "Missing RECIPE_INGREDIENTS_DB_ID" });
     }
 
     if (!recipeIds.length) {
       return res.status(200).json({
         weekly_meal_plan_id: weeklyMealPlanId,
         grouped_categories: {},
-        recipes: [],
         shopping_lines: [],
         shopping_list_html: "",
         shopping_list_html_1: "",
@@ -39,85 +33,6 @@ module.exports = async function handler(req, res) {
       });
     }
 
-    /*
-     * -------------------------------------------------------
-     * 1. FETCH RECIPE RECORDS
-     * -------------------------------------------------------
-     *
-     * The recipe IDs being passed into this endpoint are
-     * Notion page IDs, so we can fetch each recipe directly
-     * and read its Servings property.
-     */
-
-    const recipePages = await Promise.all(
-      recipeIds.map(async (recipeId) => {
-        const response = await fetch(
-          `https://api.notion.com/v1/pages/${recipeId}`,
-          {
-            method: "GET",
-            headers: {
-              Authorization: `Bearer ${notionApiKey}`,
-              "Content-Type": "application/json",
-              "Notion-Version": "2022-06-28",
-            },
-          }
-        );
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(
-            `Recipe page query failed for ${recipeId}: ${JSON.stringify(data)}`
-          );
-        }
-
-        return data;
-      })
-    );
-
-    /*
-     * Build a lookup:
-     *
-     * recipeId -> base servings
-     */
-
-    const recipeServingsMap = new Map();
-
-    for (const recipePage of recipePages) {
-      const servingsProperty =
-        recipePage.properties?.["Servings"];
-
-      let baseServings = 4;
-
-      if (
-        servingsProperty?.type === "number" &&
-        typeof servingsProperty.number === "number"
-      ) {
-        baseServings = servingsProperty.number;
-      } else if (
-        servingsProperty?.type === "formula" &&
-        typeof servingsProperty.formula?.number === "number"
-      ) {
-        baseServings = servingsProperty.formula.number;
-      } else if (
-        servingsProperty?.type === "rollup" &&
-        typeof servingsProperty.rollup?.number === "number"
-      ) {
-        baseServings = servingsProperty.rollup.number;
-      }
-
-      recipeServingsMap.set(
-        recipePage.id,
-        baseServings
-      );
-    }
-
-    /*
-     * -------------------------------------------------------
-     * 2. FETCH ALL INGREDIENT ROWS FOR THE 5 RECIPES
-     * -------------------------------------------------------
-     */
-
     const orFilters = recipeIds.map((id) => ({
       property: "Recipes",
       relation: {
@@ -125,304 +40,90 @@ module.exports = async function handler(req, res) {
       },
     }));
 
-    const allRows = await queryAllNotionRows({
-      notionApiKey,
-      recipeIngredientsDbId,
-      filter: {
-        or: orFilters,
-      },
-    });
+    const notionResponse = await fetch(
+      `https://api.notion.com/v1/databases/${recipeIngredientsDbId}/query`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${notionApiKey}`,
+          "Content-Type": "application/json",
+          "Notion-Version": "2022-06-28",
+        },
+        body: JSON.stringify({
+          filter: {
+            or: orFilters,
+          },
+          page_size: 100,
+        }),
+      }
+    );
 
-    /*
-     * -------------------------------------------------------
-     * 3. CREATE PER-RECIPE STRUCTURED INGREDIENT DATA
-     * -------------------------------------------------------
-     *
-     * This is NEW.
-     *
-     * We preserve the ingredients by recipe before combining
-     * them into the weekly shopping list.
-     */
+    const notionData = await notionResponse.json();
 
-    const recipeIngredientsMap = new Map();
-
-    for (const recipeId of recipeIds) {
-      recipeIngredientsMap.set(recipeId, []);
+    if (!notionResponse.ok) {
+      return res.status(400).json({
+        error: "Notion query failed",
+        notion_data: notionData,
+      });
     }
-
-    /*
-     * -------------------------------------------------------
-     * 4. EXISTING WEEKLY SHOPPING COMBINATION MAP
-     * -------------------------------------------------------
-     */
 
     const combined = new Map();
 
-    for (const row of allRows) {
+    for (const row of notionData.results || []) {
       const p = row.properties || {};
 
+      const ingredientRelation = p["Ingredient"]?.relation || [];
+      const ingredientId = ingredientRelation[0]?.id || "";
+
       const ingredientName =
-        p["Ingredient Name"]?.rollup?.array?.[0]?.title?.[0]?.plain_text || "";
+        p["Ingredient Name"]?.rollup?.array?.[0]?.title?.[0]?.plain_text ||
+        "Unknown ingredient";
 
       const rawQty = p["Quantity"]?.number;
-
       const quantity =
-        rawQty !== null && rawQty !== undefined
-          ? Number(rawQty)
-          : null;
+        rawQty !== null && rawQty !== undefined ? Number(rawQty) : null;
 
-      const rawUnit =
-        p["Unit"]?.select?.name || "";
+      const unit = p["Unit"]?.select?.name || "";
 
-      const ingredientRole =
-        p["Ingredient Role"]?.select?.name || "";
+      const category =
+        p["Shopping Category"]?.rollup?.array?.[0]?.select?.name || "Other";
 
-      const notes =
-        p["Notes"]?.rich_text?.[0]?.plain_text || "";
+      if (!ingredientId || !ingredientName) continue;
+      if (quantity === 0) continue;
 
-      const rawCategory =
-        p["Shopping Category"]?.rollup?.array?.[0]?.select?.name ||
-        "Other";
-
-      /*
-       * Get the recipe IDs attached to this ingredient row.
-       */
-
-      const relatedRecipeIds = (
-        p["Recipes"]?.relation || []
-      )
-        .map((relation) => relation.id)
-        .filter((id) => recipeIds.includes(id));
-
-      if (!ingredientName) continue;
-
-      const isRoleOnlyItem = [
-        "For Serving",
-        "Optional",
-        "Topping",
-        "Garnish",
-        "To Taste",
-      ].includes(ingredientRole);
-
-      if (
-        !isRoleOnlyItem &&
-        (
-          quantity === null ||
-          quantity === undefined ||
-          Number.isNaN(quantity) ||
-          quantity <= 0
-        )
-      ) {
-        continue;
-      }
-
-      const normalizedName =
-        normalizeIngredientName(ingredientName);
-
-      let normalizedCategory =
-        normalizeCategory(rawCategory);
-
-      const normalizedUnit =
-        normalizeUnit(rawUnit);
-
-      const safeQuantity =
-        quantity === null ||
-        quantity === undefined ||
-        Number.isNaN(quantity)
-          ? 0
-          : quantity;
-
-      const converted = convertUnit(
-        safeQuantity,
-        normalizedUnit,
-        normalizedName
-      );
-
-      /*
-       * -------------------------------------------------------
-       * NEW: SAVE THIS INGREDIENT UNDER EACH RELATED RECIPE
-       * -------------------------------------------------------
-       */
-
-      for (const recipeId of relatedRecipeIds) {
-        const recipeIngredients =
-          recipeIngredientsMap.get(recipeId);
-
-        if (!recipeIngredients) continue;
-
-       recipeIngredients.push({
- 	 name: ingredientName,
-  	normalized_name: normalizedName,
-  	quantity: safeQuantity,
-  	unit: normalizedUnit,
-  	category: normalizedCategory,
-  	roles: ingredientRole
-    	  ? [ingredientRole]
-    	  : [],
-  	notes: notes
-          ? [notes]
-    	  : [],
-	});
-      }
-
-      /*
-       * -------------------------------------------------------
-       * EXISTING WEEKLY COMBINATION LOGIC
-       * -------------------------------------------------------
-       */
-
-      let normalizedNameForCombine =
-        normalizedName;
-
-      if (
-        normalizedName === "chicken breast" ||
-        normalizedName === "chicken breasts" ||
-        normalizedName === "chicken thigh" ||
-        normalizedName === "chicken thighs"
-      ) {
-        normalizedNameForCombine =
-          "chicken breast or thighs";
-      }
-
-      const groceryProduce = [
-        "cucumber",
-        "cilantro",
-        "parsley",
-        "green onion",
-        "green onions",
-        "lime",
-        "lemon",
-      ];
-
-      if (
-        groceryProduce.includes(normalizedName)
-      ) {
-        normalizedNameForCombine =
-          normalizedName;
-      }
-
-      let unitForCombine =
-        converted.unit;
-
-      if (
-        groceryProduce.includes(normalizedName)
-      ) {
-        unitForCombine = "whole";
-      }
-
-      const key =
-        `${normalizedNameForCombine}__${unitForCombine}__${normalizedCategory}`;
+      const key = `${ingredientId}__${unit}__${category}`;
 
       if (!combined.has(key)) {
         combined.set(key, {
-          name: getDisplayName(
-            normalizedNameForCombine,
-            ingredientName
-          ),
+          ingredient_id: ingredientId,
+          name: ingredientName,
           quantity: 0,
-          unit: unitForCombine,
-          category: normalizedCategory,
-          roles: new Set(),
-          notes: new Set(),
+          unit,
+          category,
         });
       }
 
-      combined.get(key).quantity +=
-        converted.quantity;
-
-      if (ingredientRole) {
-        combined
-          .get(key)
-          .roles.add(ingredientRole);
-      }
-
-      if (notes) {
-        combined
-          .get(key)
-          .notes.add(notes);
-      }
+      combined.get(key).quantity += quantity || 0;
     }
-
-    /*
-     * -------------------------------------------------------
-     * 5. NEW RECIPES OUTPUT
-     * -------------------------------------------------------
-     */
-
-    const recipes = recipeIds.map(
-      (recipeId) => ({
-        recipe_id: recipeId,
-
-        base_servings:
-          recipeServingsMap.get(recipeId) || 4,
-
-        ingredients:
-          recipeIngredientsMap.get(recipeId) || [],
-      })
-    );
-
-    /*
-     * -------------------------------------------------------
-     * 6. EXISTING GROUPED SHOPPING DATA
-     * -------------------------------------------------------
-     */
 
     const groupedCategories = {};
 
     for (const item of combined.values()) {
-      const isDisplayOnlyItem =
-        item.roles?.has("For Serving") ||
-        item.roles?.has("Optional") ||
-        item.roles?.has("Topping") ||
-        item.roles?.has("Garnish") ||
-        item.roles?.has("To Taste");
-
-      if (
-        item.quantity <= 0 &&
-        !isDisplayOnlyItem
-      ) {
-        continue;
+      if (!groupedCategories[item.category]) {
+        groupedCategories[item.category] = [];
       }
 
-      const finalized =
-        finalizeUnit(item);
-
-      const shopperItem =
-        makeShopperFriendlyItem(finalized);
-
-      if (!shopperItem) continue;
-
-      if (
-        !groupedCategories[
-          shopperItem.category
-        ]
-      ) {
-        groupedCategories[
-          shopperItem.category
-        ] = [];
-      }
-
-      groupedCategories[
-        shopperItem.category
-      ].push({
-        name: shopperItem.name,
-
-        quantity: Number(
-          shopperItem.quantity.toFixed(2)
-        ),
-
-        unit: shopperItem.unit,
-
-        roles: shopperItem.roles,
-
-        notes: shopperItem.notes,
+      groupedCategories[item.category].push({
+        name: item.name,
+        quantity: Number(item.quantity.toFixed(2)),
+        unit: item.unit,
       });
     }
 
     const categoryOrder = [
       "Produce",
-      "Meat",
       "Protein",
+      "Meat",
       "Dairy",
       "Frozen",
       "Canned",
@@ -435,209 +136,49 @@ module.exports = async function handler(req, res) {
     ];
 
     const orderedCategoryNames = [
-      ...categoryOrder.filter(
-        (category) =>
-          groupedCategories[category]
-      ),
-
+      ...categoryOrder.filter((c) => groupedCategories[c]),
       ...Object.keys(groupedCategories)
-        .filter(
-          (category) =>
-            !categoryOrder.includes(category)
-        )
+        .filter((c) => !categoryOrder.includes(c))
         .sort(),
     ];
-
-    /*
-     * -------------------------------------------------------
-     * 7. EXISTING SHOPPING DISPLAY OUTPUT
-     * -------------------------------------------------------
-     */
 
     const shoppingLines = [];
     const shoppingListHtmlParts = [];
 
-    for (
-      const category
-      of orderedCategoryNames
-    ) {
-      groupedCategories[category].sort(
-        (a, b) =>
-          a.name.localeCompare(b.name)
+    for (const category of orderedCategoryNames) {
+      shoppingLines.push(category);
+
+      groupedCategories[category].sort((a, b) =>
+        a.name.localeCompare(b.name)
       );
 
       const listItems = [];
 
-      shoppingLines.push(category);
-
-      for (
-        const item
-        of groupedCategories[category]
-      ) {
-        const isDisplayOnlyItem =
-          item.roles?.includes(
-            "For Serving"
-          ) ||
-          item.roles?.includes(
-            "Optional"
-          ) ||
-          item.roles?.includes(
-            "Topping"
-          ) ||
-          item.roles?.includes(
-            "To Taste"
-          ) ||
-          item.roles?.includes(
-            "Garnish"
-          );
-
-        if (
-          (
-            !item.quantity ||
-            item.quantity <= 0
-          ) &&
-          !isDisplayOnlyItem
-        ) {
-          continue;
-        }
-
-        const qty =
-          formatQty(item.quantity);
-
-        const normalizedUnit = (
-          item.unit || ""
-        )
-          .trim()
-          .toLowerCase();
-
-        const normalizedName = (
-          item.name || ""
-        )
-          .trim()
-          .toLowerCase();
-
-        const displayUnit =
-          normalizedUnit &&
-          normalizedUnit !==
-            normalizedName
-            ? item.unit
-            : "";
-
-        const nameLower =
-          String(
-            item.name || ""
-          ).toLowerCase();
-
-        const roleLower =
-          (
-            item.roles || []
-          ).map((role) =>
-            String(role)
-              .toLowerCase()
-          );
-
-        if (
-          (
-            !item.quantity ||
-            item.quantity <= 0
-          ) &&
-          roleLower.includes(
-            "to taste"
-          ) &&
-          (
-            nameLower === "salt" ||
-            nameLower === "pepper" ||
-            nameLower ===
-              "black pepper"
-          )
-        ) {
-          continue;
-        }
-
-        const roleLabel =
-          formatRoleLabel(
-            item.roles
-          );
-
-        const noteLabel =
-          formatNotesLabel(
-            item.notes
-          );
-
-        let line =
-          `${qty}${
-            qty && displayUnit
-              ? ` ${displayUnit}`
-              : ""
-          } ${
-            item.name
-          }${noteLabel}${roleLabel}`
-            .trim();
-
-        line =
-          cleanDisplayLine(line);
+      for (const item of groupedCategories[category]) {
+        const hasQty = item.quantity > 0;
+        const qty = hasQty ? formatQty(item.quantity) : "";
+        const line = `${qty}${qty && item.unit ? ` ${item.unit}` : ""} ${item.name}`.trim();
 
         shoppingLines.push(line);
-
-        listItems.push(
-          `<li>${escapeHtml(
-            line
-          )}</li>`
-        );
+        listItems.push(`<li>${escapeHtml(line)}</li>`);
       }
 
-      if (listItems.length) {
-        shoppingListHtmlParts.push(
-          `<div class="shopping-category"><h3>${escapeHtml(
-            category
-          )}</h3><ul>${listItems.join(
-            ""
-          )}</ul></div>`
-        );
-      }
+      shoppingListHtmlParts.push(
+        `<div class="shopping-category"><h3>${escapeHtml(category)}</h3><ul>${listItems.join("")}</ul></div>`
+      );
     }
 
-    const shoppingListHtml =
-      shoppingListHtmlParts.join("");
-
-    const htmlChunks =
-      chunkString(
-        shoppingListHtml,
-        1900
-      );
-
-    /*
-     * -------------------------------------------------------
-     * 8. RESPONSE
-     * -------------------------------------------------------
-     *
-     * Existing fields are unchanged.
-     * `recipes` is the only major new output.
-     */
+    const shoppingListHtml = shoppingListHtmlParts.join("");
+    const htmlChunks = chunkString(shoppingListHtml, 1900);
 
     return res.status(200).json({
-      weekly_meal_plan_id:
-        weeklyMealPlanId,
-
-      grouped_categories:
-        groupedCategories,
-
-      recipes,
-
-      shopping_lines:
-        shoppingLines,
-
-      shopping_list_html:
-        shoppingListHtml,
-
-      shopping_list_html_1:
-        htmlChunks[0] || "",
-
-      shopping_list_html_2:
-        htmlChunks[1] || "",
-
-      shopping_list_html_3:
-        htmlChunks[2] || "",
+      weekly_meal_plan_id: weeklyMealPlanId,
+      grouped_categories: groupedCategories,
+      shopping_lines: shoppingLines,
+      shopping_list_html: shoppingListHtml,
+      shopping_list_html_1: htmlChunks[0] || "",
+      shopping_list_html_2: htmlChunks[1] || "",
+      shopping_list_html_3: htmlChunks[2] || "",
     });
   } catch (error) {
     return res.status(400).json({
@@ -645,420 +186,11 @@ module.exports = async function handler(req, res) {
       details: error.message,
     });
   }
-};
-
-async function queryAllNotionRows({ notionApiKey, recipeIngredientsDbId, filter }) {
-  const allRows = [];
-  let startCursor = undefined;
-
-  while (true) {
-    const notionResponse = await fetch(
-      `https://api.notion.com/v1/databases/${recipeIngredientsDbId}/query`,
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${notionApiKey}`,
-          "Content-Type": "application/json",
-          "Notion-Version": "2022-06-28",
-        },
-        body: JSON.stringify({
-          filter,
-          page_size: 100,
-          ...(startCursor ? { start_cursor: startCursor } : {}),
-        }),
-      }
-    );
-
-    const notionData = await notionResponse.json();
-
-    if (!notionResponse.ok) {
-      throw new Error(`Notion query failed: ${JSON.stringify(notionData)}`);
-    }
-
-    allRows.push(...(notionData.results || []));
-
-    if (!notionData.has_more || !notionData.next_cursor) {
-      break;
-    }
-
-    startCursor = notionData.next_cursor;
-  }
-
-  return allRows;
-}
-
-function normalizeIngredientName(name) {
-  return String(name || "")
-    .trim()
-    .toLowerCase()
-    .replace(/\s+/g, " ")
-    .replace(/\s*\(optional\)\s*/g, "")
-    .replace(/^fresh /, "")
-    .replace(/^whole /, "")
-    .replace(/^plain /, "")
-    .replace(/^shredded /, "")
-    .replace(/^diced /, "")
-    .replace(/^chopped /, "")
-    .replace(/^minced /, "")
-    .replace(/^sliced /, "")
-    .replace(/^grated /, "")
-    .replace(/^cooked /, "")
-    .replace(/greek yogurt/g, "yogurt")
-    .replace(/plain yogurt/g, "yogurt")
-    .replace(/lime juice/g, "lime")
-    .replace(/lemon juice/g, "lemon")
-    .replace(/green onion$/g, "green onions")
-    .replace(/cherry tomato$/g, "cherry tomatoes")
-    .replace(/tomato$/g, "tomatoes")
-    .replace(/garlic cloves/g, "garlic")
-    .replace(/cloves garlic/g, "garlic")
-    .replace(/beef chuck roast/g, "beef chuck roast")
-    .trim();
-}
-
-function getDisplayName(normalizedName, originalName) {
-  const displayMap = {
-    yogurt: "yogurt",
-    lime: "lime",
-    lemon: "lemon",
-    garlic: "garlic",
-    tomatoes: "tomatoes",
-    "cherry tomatoes": "cherry tomatoes",
-    "green onions": "green onions",
-  };
-
-  return displayMap[normalizedName] || String(originalName || normalizedName).trim();
-}
-
-function normalizeUnit(unit) {
-  const u = String(unit || "").trim().toLowerCase();
-
-  const unitMap = {
-    teaspoon: "tsp",
-    teaspoons: "tsp",
-    tsp: "tsp",
-    tablespoon: "tbsp",
-    tablespoons: "tbsp",
-    tbsp: "tbsp",
-    cup: "cup",
-    cups: "cup",
-    pound: "lb",
-    pounds: "lb",
-    lb: "lb",
-    lbs: "lb",
-    ounce: "oz",
-    ounces: "oz",
-    oz: "oz",
-    clove: "clove",
-    cloves: "clove",
-    can: "can",
-    cans: "can",
-    whole: "whole",
-    large: "large",
-    small: "small",
-    medium: "medium",
-    bunch: "bunch",
-    pint: "pint",
-    jar: "jar",
-    package: "package",
-    packages: "package",
-  };
-
-  return unitMap[u] || u;
-}
-
-function normalizeCategory(category) {
-  const c = String(category || "").trim();
-
-  const categoryMap = {
-    Produce: "Produce",
-    Protein: "Meat",
-    Meat: "Meat",
-    Dairy: "Dairy",
-    Frozen: "Frozen",
-    Canned: "Canned",
-    Pantry: "Pantry",
-    Dry: "Dry",
-    Baking: "Baking",
-    Seasonings: "Spices",
-    Spices: "Spices",
-    Other: "Other",
-  };
-
-  return categoryMap[c] || c || "Other";
-}
-
-function convertUnit(quantity, unit, ingredientName) {
-  let q = Number(quantity);
-  let u = unit;
-  const name = String(ingredientName || "").trim().toLowerCase();
-
-  if (Number.isNaN(q)) {
-    return { quantity, unit };
-  }
-
-  const liquidVolumeIngredients = new Set([
-    "honey",
-    "gochujang",
-    "avocado oil",
-    "olive oil",
-    "vinegar",
-    "rice vinegar",
-    "apple cider vinegar",
-    "soy sauce",
-    "coconut aminos",
-    "lemon",
-    "lime",
-    "water",
-  ]);
-
-  // For liquid-style ingredients, normalize everything to tablespoons first.
-  // This lets honey combine across cup/tbsp/tsp instead of showing 3 times.
-  if (liquidVolumeIngredients.has(name)) {
-    if (u === "tsp") {
-      q = q / 3;
-      u = "tbsp";
-    }
-
-    if (u === "cup") {
-      q = q * 16;
-      u = "tbsp";
-    }
-
-    return { quantity: q, unit: u };
-  }
-
-  // General conversions.
-  if (u === "tsp" && q >= 3) {
-    q = q / 3;
-    u = "tbsp";
-  }
-
-  if (u === "tbsp" && q >= 8) {
-    q = q / 16;
-    u = "cup";
-  }
-
-  if (u === "oz" && q >= 16) {
-    q = q / 16;
-    u = "lb";
-  }
-
-  return { quantity: q, unit: u };
-}
-
-function finalizeUnit(item) {
-  let quantity = item.quantity;
-  let unit = item.unit;
-
-  // Second pass after ingredients are combined.
-  if (unit === "tsp" && quantity >= 3) {
-    quantity = quantity / 3;
-    unit = "tbsp";
-  }
-
-  if (unit === "tbsp" && quantity >= 8) {
-    quantity = quantity / 16;
-    unit = "cup";
-  }
-
-  if (unit === "oz" && quantity >= 16) {
-    quantity = quantity / 16;
-    unit = "lb";
-  }
-
-  return {
-    ...item,
-    quantity,
-    unit,
-  };
-}
-
-function makeShopperFriendlyItem(item) {
-  let name = String(item.name || "").trim().toLowerCase();
-  let unit = String(item.unit || "").trim().toLowerCase();
-  let quantity = item.quantity;
-  let category = item.category;
-  let roles = Array.from(item.roles || []);
-  let notes = Array.from(item.notes || []);
-
-// Grocery-store produce normalization
-if (name === "cilantro") {
-  quantity = 1;
-  unit = "bunch";
-}
-
-if (name === "parsley") {
-  quantity = 1;
-  unit = "bunch";
-}
-
-if (name === "onion") {
-  unit = "whole";
-  quantity = Math.max(1, Math.ceil(quantity || 1));
-  notes = notes.filter((n) => {
-    const v = String(n).toLowerCase();
-    return !v.includes("medium") && !v.includes("quartered");
-  });
-}
-
-// Round produce purchases up
-if (
-  ["cucumber", "lime", "lemon", "onion"].includes(name) &&
-  unit === "whole"
-) {
-  quantity = Math.ceil(quantity);
-}
-
-  // Hide noisy prep notes
-  notes = notes.filter((note) => {
-    const n = String(note || "").toLowerCase().trim();
-    return ![
-      "chopped", "diced", "sliced", "thinly sliced", "minced",
-      "finely minced", "halved", "grated", "squeezed dry",
-      "small", "medium", "large", "fresh", "extra",
-      "garnish", "topping", "for serving"
-    ].includes(n);
-  });
-
-  // Cucumbers: grocery list should be simple
-  if (name === "cucumber") {
-    unit = "whole";
-    notes = [];
-  }
-
-  // Chicken alternatives: make the purchase decision clear
-  if (name === "chicken breast" || name === "chicken thighs" || name === "chicken thigh") {
-    name = "chicken breast or thighs";
-    notes = notes.filter((n) => {
-      const v = String(n).toLowerCase();
-      return !v.includes("or thighs") && !v.includes("or breasts");
-    });
-  }
-
-  // Rice: simplify cooked/serving rice
-  if (name === "rice") {
-    notes = notes.filter((n) => {
-      const v = String(n).toLowerCase();
-      return !v.includes("cooked") && !v.includes("for serving");
-    });
-    category = "Pantry";
-  }
-
-  // If an item has a real quantity elsewhere, do not over-emphasize optional after combining
-  if (quantity > 0 && roles.includes("Optional")) {
-    roles = roles.filter((r) => r !== "Optional");
-  }
-
-  return {
-    ...item,
-    name,
-    unit,
-    quantity,
-    category,
-    roles,
-    notes,
-  };
 }
 
 function formatQty(value) {
-  if (value === null || value === undefined || value === "" || Number(value) === 0) return "";
-
-  const n = Number(value);
-
-  if (Number.isNaN(n)) return String(value);
-
-  const rounded = Math.round(n * 100) / 100;
-  if (rounded >= 0.55 && rounded <= 0.7) return "2/3";
-  const whole = Math.floor(rounded);
-  const decimal = rounded - whole;
-
-  let fraction = "";
-
-  if (decimal >= 0.12 && decimal < 0.2) fraction = "1/8";
-  else if (decimal >= 0.2 && decimal < 0.3) fraction = "1/4";
-  else if (decimal >= 0.3 && decimal < 0.4) fraction = "1/3";
-  else if (decimal >= 0.45 && decimal < 0.55) fraction = "1/2";
-  else if (decimal >= 0.6 && decimal < 0.7) fraction = "2/3";
-  else if (decimal >= 0.7 && decimal < 0.8) fraction = "3/4";
-  else if (decimal >= 0.8 && decimal < 0.9) fraction = "7/8";
-
-  if (whole === 0) {
-    return fraction || String(rounded);
-  }
-
-  return fraction ? `${whole} ${fraction}` : String(whole);
-}
-
-function formatRoleLabel(roles) {
-  if (!roles || !roles.length) return "";
-
-  const normalizedRoles = roles
-    .map((role) => String(role || "").trim().toLowerCase())
-    .filter(Boolean);
-
-  if (
-  normalizedRoles.includes("optional") &&
-  normalizedRoles.every((role) => role === "optional")
-) {
-  return " (optional)";
-}
-  if (normalizedRoles.includes("for serving")) return " (for serving)";
-  if (normalizedRoles.includes("serving")) return " (for serving)";
-  if (normalizedRoles.includes("topping")) return " (topping)";
-  if (normalizedRoles.includes("garnish")) return " (garnish)";
-  if (normalizedRoles.includes("to taste")) return " (to taste)";
-
-  return "";
-}
-
-function formatNotesLabel(notes) {
-  if (!notes || !notes.length) return "";
-
-  const hiddenNotes = new Set([
-    "chopped",
-    "diced",
-    "sliced",
-    "thinly sliced",
-    "minced",
-    "finely minced",
-    "halved",
-    "grated",
-    "squeezed dry",
-    "wedges",
-    "cut into wedges",
-    "small",
-    "medium",
-    "large",
-    "fresh",
-    "extra",
-    "garnish",
-    "for serving",
-    "topping"
-  ]);
-
-  const cleanNotes = notes
-    .map((note) => String(note || "").trim())
-    .filter(Boolean)
-    .filter((note) => !hiddenNotes.has(note.toLowerCase()));
-
-  if (!cleanNotes.length) return "";
-
-  return ` (${cleanNotes.join("; ")})`;
-}
-
-function cleanDisplayLine(line) {
-  return String(line || "")
-    .replace(/\bwhole lime juice\b/gi, "whole lime")
-    .replace(/\bwhole lemon juice\b/gi, "whole lemon")
-    .replace(/\blime lime juice\b/gi, "lime")
-    .replace(/\blemon lemon juice\b/gi, "lemon")
-    .replace(/\bwhole whole\b/gi, "whole")
-    .replace(/\bcup cup\b/gi, "cup")
-    .replace(/\btbsp tbsp\b/gi, "tbsp")
-    .replace(/\btsp tsp\b/gi, "tsp")
-    .replace(/\s+/g, " ")
-    .trim();
+  if (Number.isInteger(value)) return String(value);
+  return String(Number(value.toFixed(2)));
 }
 
 function escapeHtml(str) {
