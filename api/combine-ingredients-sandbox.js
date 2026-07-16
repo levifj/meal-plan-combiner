@@ -2,6 +2,7 @@ module.exports = async function handler(req, res) {try {const body =typeof req.b
 
 const weeklyMealPlanId = body.weekly_meal_plan_id || "";
 const recipeServingsPairs = body.recipe_servings_pairs || "";
+const selectedServings = Number(body.selected_servings) || 4;
 
 const recipeMeta = recipeServingsPairs
   .split(",")
@@ -97,8 +98,6 @@ const safeQuantity =
 
 const recipeBaseServings =
   recipeMeta.find((recipe) => recipe.id === recipeId)?.baseServings || 4;
-
-const selectedServings = 4;
 
 const effectiveServings = Math.max(
   recipeBaseServings,
