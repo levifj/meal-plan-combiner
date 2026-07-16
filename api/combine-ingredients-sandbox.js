@@ -1,11 +1,23 @@
 module.exports = async function handler(req, res) {try {const body =typeof req.body === "string" ? JSON.parse(req.body) : req.body || {};
 
 const weeklyMealPlanId = body.weekly_meal_plan_id || "";
-const recipeIdsCsv = body.recipe_ids_csv || "";
-const recipeIds = recipeIdsCsv
+const recipeServingsPairs = body.recipe_servings_pairs || "";
+
+const recipeMeta = recipeServingsPairs
   .split(",")
-  .map((id) => id.trim())
-  .filter(Boolean);
+  .map((pair) => pair.trim())
+  .filter(Boolean)
+  .map((pair) => {
+    const [id, servings] = pair.split("|");
+
+    return {
+      id: id?.trim(),
+      baseServings: Number(servings) || 4,
+    };
+  })
+  .filter((recipe) => recipe.id);
+
+const recipeIds = recipeMeta.map((recipe) => recipe.id);
 
 const notionApiKey = process.env.NOTION_API_KEY;
 const recipeIngredientsDbId = process.env.RECIPE_INGREDIENTS_DB_ID;
