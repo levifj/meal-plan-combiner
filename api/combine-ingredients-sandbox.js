@@ -88,11 +88,34 @@ if (!isRoleOnlyItem &&(quantity === null ||quantity === undefined ||Number.isNaN
 
   const normalizedUnit = normalizeUnit(rawUnit);
 
-  const safeQuantity =
+const safeQuantity =
+  quantity === null ||
+  quantity === undefined ||
+  Number.isNaN(quantity)
+    ? 0
+    : quantity;
 
-quantity === null || quantity === undefined || Number.isNaN(quantity)? 0: quantity;
+const recipeBaseServings =
+  recipeMeta.find((recipe) => recipe.id === recipeId)?.baseServings || 4;
 
-const converted = convertUnit(safeQuantity, normalizedUnit, normalizedName);
+const selectedServings = 6;
+
+const effectiveServings = Math.max(
+  recipeBaseServings,
+  selectedServings
+);
+
+const servingMultiplier =
+  effectiveServings / recipeBaseServings;
+
+const scaledQuantity =
+  safeQuantity * servingMultiplier;
+
+const converted = convertUnit(
+  scaledQuantity,
+  normalizedUnit,
+  normalizedName
+);
 
   let normalizedNameForCombine = normalizedName;
 
