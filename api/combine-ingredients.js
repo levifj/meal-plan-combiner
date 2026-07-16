@@ -218,139 +218,474 @@ return res.status(200).json({
   }
 };
 
-async function queryAllNotionRows({ notionApiKey, recipeIngredientsDbId, filter }) {const allRows = [];let startCursor = undefined;
+async function queryAllNotionRows({
+  notionApiKey,
+  recipeIngredientsDbId,
+  filter,
+}) {
+  const allRows = [];
+  let startCursor = undefined;
 
-while (true) {const notionResponse = await fetch(https://api.notion.com/v1/databases/${recipeIngredientsDbId}/query,{method: "POST",headers: {Authorization: Bearer ${notionApiKey},"Content-Type": "application/json","Notion-Version": "2022-06-28",},body: JSON.stringify({filter,page_size: 100,...(startCursor ? { start_cursor: startCursor } : {}),}),});
+  while (true) {
+    const notionResponse = await fetch(
+      `https://api.notion.com/v1/databases/${recipeIngredientsDbId}/query`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${notionApiKey}`,
+          "Content-Type": "application/json",
+          "Notion-Version": "2022-06-28",
+        },
+        body: JSON.stringify({
+          filter,
+          page_size: 100,
+          ...(startCursor ? { start_cursor: startCursor } : {}),
+        }),
+      }
+    );
 
-const notionData = await notionResponse.json();
+    const notionData = await notionResponse.json();
 
-if (!notionResponse.ok) {
-  throw new Error(`Notion query failed: ${JSON.stringify(notionData)}`);
+    if (!notionResponse.ok) {
+      throw new Error(
+        `Notion query failed: ${JSON.stringify(notionData)}`
+      );
+    }
+
+    allRows.push(...(notionData.results || []));
+
+    if (!notionData.has_more || !notionData.next_cursor) {
+      break;
+    }
+
+    startCursor = notionData.next_cursor;
+  }
+
+  return allRows;
 }
 
-allRows.push(...(notionData.results || []));
-
-if (!notionData.has_more || !notionData.next_cursor) {
-  break;
+function normalizeIngredientName(name) {
+  return String(name || "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .replace(/\s*\(optional\)\s*/g, "")
+    .replace(/^fresh /, "")
+    .replace(/^whole /, "")
+    .replace(/^plain /, "")
+    .replace(/^shredded /, "")
+    .replace(/^diced /, "")
+    .replace(/^chopped /, "")
+    .replace(/^minced /, "")
+    .replace(/^sliced /, "")
+    .replace(/^grated /, "")
+    .replace(/^cooked /, "")
+    .replace(/greek yogurt/g, "yogurt")
+    .replace(/plain yogurt/g, "yogurt")
+    .replace(/lime juice/g, "lime")
+    .replace(/lemon juice/g, "lemon")
+    .replace(/green onion$/g, "green onions")
+    .replace(/cherry tomato$/g, "cherry tomatoes")
+    .replace(/tomato$/g, "tomatoes")
+    .replace(/garlic cloves/g, "garlic")
+    .replace(/cloves garlic/g, "garlic")
+    .replace(/beef chuck roast/g, "beef chuck roast")
+    .trim();
 }
 
-startCursor = notionData.next_cursor;
+function getDisplayName(normalizedName, originalName) {
+  const displayMap = {
+    yogurt: "yogurt",
+    lime: "lime",
+    lemon: "lemon",
+    garlic: "garlic",
+    tomatoes: "tomatoes",
+    "cherry tomatoes": "cherry tomatoes",
+    "green onions": "green onions",
+  };
 
+  return (
+    displayMap[normalizedName] ||
+    String(originalName || normalizedName).trim()
+  );
 }
 
-return allRows;}
+function normalizeUnit(unit) {
+  const u = String(unit || "").trim().toLowerCase();
 
-function normalizeIngredientName(name) {return String(name || "").trim().toLowerCase().replace(/\s+/g, " ").replace(/\s*(optional)\s*/g, "").replace(/^fresh /, "").replace(/^whole /, "").replace(/^plain /, "").replace(/^shredded /, "").replace(/^diced /, "").replace(/^chopped /, "").replace(/^minced /, "").replace(/^sliced /, "").replace(/^grated /, "").replace(/^cooked /, "").replace(/greek yogurt/g, "yogurt").replace(/plain yogurt/g, "yogurt").replace(/lime juice/g, "lime").replace(/lemon juice/g, "lemon").replace(/green onion$/g, "green onions").replace(/cherry tomato$/g, "cherry tomatoes").replace(/tomato$/g, "tomatoes").replace(/garlic cloves/g, "garlic").replace(/cloves garlic/g, "garlic").replace(/beef chuck roast/g, "beef chuck roast").trim();}
+  const unitMap = {
+    teaspoon: "tsp",
+    teaspoons: "tsp",
+    tsp: "tsp",
+    tablespoon: "tbsp",
+    tablespoons: "tbsp",
+    tbsp: "tbsp",
+    cup: "cup",
+    cups: "cup",
+    pound: "lb",
+    pounds: "lb",
+    lb: "lb",
+    lbs: "lb",
+    ounce: "oz",
+    ounces: "oz",
+    oz: "oz",
+    clove: "clove",
+    cloves: "clove",
+    can: "can",
+    cans: "can",
+    whole: "whole",
+    large: "large",
+    small: "small",
+    medium: "medium",
+    bunch: "bunch",
+    pint: "pint",
+    jar: "jar",
+    package: "package",
+    packages: "package",
+  };
 
-function getDisplayName(normalizedName, originalName) {const displayMap = {yogurt: "yogurt",lime: "lime",lemon: "lemon",garlic: "garlic",tomatoes: "tomatoes","cherry tomatoes": "cherry tomatoes","green onions": "green onions",};
-
-return displayMap[normalizedName] || String(originalName || normalizedName).trim();}
-
-function normalizeUnit(unit) {const u = String(unit || "").trim().toLowerCase();
-
-const unitMap = {teaspoon: "tsp",teaspoons: "tsp",tsp: "tsp",tablespoon: "tbsp",tablespoons: "tbsp",tbsp: "tbsp",cup: "cup",cups: "cup",pound: "lb",pounds: "lb",lb: "lb",lbs: "lb",ounce: "oz",ounces: "oz",oz: "oz",clove: "clove",cloves: "clove",can: "can",cans: "can",whole: "whole",large: "large",small: "small",medium: "medium",bunch: "bunch",pint: "pint",jar: "jar",package: "package",packages: "package",};
-
-return unitMap[u] || u;}
-
-function normalizeCategory(category) {const c = String(category || "").trim();
-
-const categoryMap = {Produce: "Produce",Protein: "Meat",Meat: "Meat",Dairy: "Dairy",Frozen: "Frozen",Canned: "Canned",Pantry: "Pantry",Dry: "Dry",Baking: "Baking",Seasonings: "Spices",Spices: "Spices",Other: "Other",};
-
-return categoryMap[c] || c || "Other";}
-
-function convertUnit(quantity, unit, ingredientName) {let q = Number(quantity);let u = unit;const name = String(ingredientName || "").trim().toLowerCase();
-
-if (Number.isNaN(q)) {return { quantity, unit };}
-
-const liquidVolumeIngredients = new Set(["honey","gochujang","avocado oil","olive oil","vinegar","rice vinegar","apple cider vinegar","soy sauce","coconut aminos","lemon","lime","water",]);
-
-// For liquid-style ingredients, normalize everything to tablespoons first.// This lets honey combine across cup/tbsp/tsp instead of showing 3 times.if (liquidVolumeIngredients.has(name)) {if (u === "tsp") {q = q / 3;u = "tbsp";}
-
-if (u === "cup") {
-  q = q * 16;
-  u = "tbsp";
+  return unitMap[u] || u;
 }
 
-return { quantity: q, unit: u };
+function normalizeCategory(category) {
+  const c = String(category || "").trim();
 
+  const categoryMap = {
+    Produce: "Produce",
+    Protein: "Meat",
+    Meat: "Meat",
+    Dairy: "Dairy",
+    Frozen: "Frozen",
+    Canned: "Canned",
+    Pantry: "Pantry",
+    Dry: "Dry",
+    Baking: "Baking",
+    Seasonings: "Spices",
+    Spices: "Spices",
+    Other: "Other",
+  };
+
+  return categoryMap[c] || c || "Other";
 }
 
-// General conversions.if (u === "tsp" && q >= 3) {q = q / 3;u = "tbsp";}
+function convertUnit(quantity, unit, ingredientName) {
+  let q = Number(quantity);
+  let u = unit;
+  const name = String(ingredientName || "").trim().toLowerCase();
 
-if (u === "tbsp" && q >= 8) {q = q / 16;u = "cup";}
+  if (Number.isNaN(q)) {
+    return { quantity, unit };
+  }
 
-if (u === "oz" && q >= 16) {q = q / 16;u = "lb";}
+  const liquidVolumeIngredients = new Set([
+    "honey",
+    "gochujang",
+    "avocado oil",
+    "olive oil",
+    "vinegar",
+    "rice vinegar",
+    "apple cider vinegar",
+    "soy sauce",
+    "coconut aminos",
+    "lemon",
+    "lime",
+    "water",
+  ]);
 
-return { quantity: q, unit: u };}
+  if (liquidVolumeIngredients.has(name)) {
+    if (u === "tsp") {
+      q = q / 3;
+      u = "tbsp";
+    }
 
-function finalizeUnit(item) {let quantity = item.quantity;let unit = item.unit;
+    if (u === "cup") {
+      q = q * 16;
+      u = "tbsp";
+    }
 
-// Second pass after ingredients are combined.if (unit === "tsp" && quantity >= 3) {quantity = quantity / 3;unit = "tbsp";}
+    return { quantity: q, unit: u };
+  }
 
-if (unit === "tbsp" && quantity >= 8) {quantity = quantity / 16;unit = "cup";}
+  if (u === "tsp" && q >= 3) {
+    q = q / 3;
+    u = "tbsp";
+  }
 
-if (unit === "oz" && quantity >= 16) {quantity = quantity / 16;unit = "lb";}
+  if (u === "tbsp" && q >= 8) {
+    q = q / 16;
+    u = "cup";
+  }
 
-return {...item,quantity,unit,};}
+  if (u === "oz" && q >= 16) {
+    q = q / 16;
+    u = "lb";
+  }
 
-function makeShopperFriendlyItem(item) {let name = String(item.name || "").trim().toLowerCase();let unit = String(item.unit || "").trim().toLowerCase();let quantity = item.quantity;let category = item.category;let roles = Array.from(item.roles || []);let notes = Array.from(item.notes || []);
+  return { quantity: q, unit: u };
+}
 
-// Grocery-store produce normalizationif (name === "cilantro") {quantity = 1;unit = "bunch";}
+function finalizeUnit(item) {
+  let quantity = item.quantity;
+  let unit = item.unit;
 
-if (name === "parsley") {quantity = 1;unit = "bunch";}
+  if (unit === "tsp" && quantity >= 3) {
+    quantity = quantity / 3;
+    unit = "tbsp";
+  }
 
-if (name === "onion") {unit = "whole";quantity = Math.max(1, Math.ceil(quantity || 1));notes = notes.filter((n) => {const v = String(n).toLowerCase();return !v.includes("medium") && !v.includes("quartered");});}
+  if (unit === "tbsp" && quantity >= 8) {
+    quantity = quantity / 16;
+    unit = "cup";
+  }
 
-// Round produce purchases upif (["cucumber", "lime", "lemon", "onion"].includes(name) &&unit === "whole") {quantity = Math.ceil(quantity);}
+  if (unit === "oz" && quantity >= 16) {
+    quantity = quantity / 16;
+    unit = "lb";
+  }
 
-// Hide noisy prep notesnotes = notes.filter((note) => {const n = String(note || "").toLowerCase().trim();return !["chopped", "diced", "sliced", "thinly sliced", "minced","finely minced", "halved", "grated", "squeezed dry","small", "medium", "large", "fresh", "extra","garnish", "topping", "for serving"].includes(n);});
+  return {
+    ...item,
+    quantity,
+    unit,
+  };
+}
 
-// Cucumbers: grocery list should be simpleif (name === "cucumber") {unit = "whole";notes = [];}
+function makeShopperFriendlyItem(item) {
+  let name = String(item.name || "").trim().toLowerCase();
+  let unit = String(item.unit || "").trim().toLowerCase();
+  let quantity = item.quantity;
+  let category = item.category;
+  let roles = Array.from(item.roles || []);
+  let notes = Array.from(item.notes || []);
 
-// Chicken alternatives: make the purchase decision clearif (name === "chicken breast" || name === "chicken thighs" || name === "chicken thigh") {name = "chicken breast or thighs";notes = notes.filter((n) => {const v = String(n).toLowerCase();return !v.includes("or thighs") && !v.includes("or breasts");});}
+  if (name === "cilantro") {
+    quantity = 1;
+    unit = "bunch";
+  }
 
-// Rice: simplify cooked/serving riceif (name === "rice") {notes = notes.filter((n) => {const v = String(n).toLowerCase();return !v.includes("cooked") && !v.includes("for serving");});category = "Pantry";}
+  if (name === "parsley") {
+    quantity = 1;
+    unit = "bunch";
+  }
 
-// If an item has a real quantity elsewhere, do not over-emphasize optional after combiningif (quantity > 0 && roles.includes("Optional")) {roles = roles.filter((r) => r !== "Optional");}
+  if (name === "onion") {
+    unit = "whole";
+    quantity = Math.max(1, Math.ceil(quantity || 1));
 
-return {...item,name,unit,quantity,category,roles,notes,};}
+    notes = notes.filter((n) => {
+      const v = String(n).toLowerCase();
+      return !v.includes("medium") && !v.includes("quartered");
+    });
+  }
 
-function formatQty(value) {if (value === null || value === undefined || value === "" || Number(value) === 0) return "";
+  if (
+    ["cucumber", "lime", "lemon", "onion"].includes(name) &&
+    unit === "whole"
+  ) {
+    quantity = Math.ceil(quantity);
+  }
 
-const n = Number(value);
+  notes = notes.filter((note) => {
+    const n = String(note || "").toLowerCase().trim();
 
-if (Number.isNaN(n)) return String(value);
+    return ![
+      "chopped",
+      "diced",
+      "sliced",
+      "thinly sliced",
+      "minced",
+      "finely minced",
+      "halved",
+      "grated",
+      "squeezed dry",
+      "small",
+      "medium",
+      "large",
+      "fresh",
+      "extra",
+      "garnish",
+      "topping",
+      "for serving",
+    ].includes(n);
+  });
 
-const rounded = Math.round(n * 100) / 100;if (rounded >= 0.55 && rounded <= 0.7) return "2/3";const whole = Math.floor(rounded);const decimal = rounded - whole;
+  if (name === "cucumber") {
+    unit = "whole";
+    notes = [];
+  }
 
-let fraction = "";
+  if (
+    name === "chicken breast" ||
+    name === "chicken thighs" ||
+    name === "chicken thigh"
+  ) {
+    name = "chicken breast or thighs";
 
-if (decimal >= 0.12 && decimal < 0.2) fraction = "1/8";else if (decimal >= 0.2 && decimal < 0.3) fraction = "1/4";else if (decimal >= 0.3 && decimal < 0.4) fraction = "1/3";else if (decimal >= 0.45 && decimal < 0.55) fraction = "1/2";else if (decimal >= 0.6 && decimal < 0.7) fraction = "2/3";else if (decimal >= 0.7 && decimal < 0.8) fraction = "3/4";else if (decimal >= 0.8 && decimal < 0.9) fraction = "7/8";
+    notes = notes.filter((n) => {
+      const v = String(n).toLowerCase();
+      return !v.includes("or thighs") && !v.includes("or breasts");
+    });
+  }
 
-if (whole === 0) {return fraction || String(rounded);}
+  if (name === "rice") {
+    notes = notes.filter((n) => {
+      const v = String(n).toLowerCase();
+      return !v.includes("cooked") && !v.includes("for serving");
+    });
 
-return fraction ? ${whole} ${fraction} : String(whole);}
+    category = "Pantry";
+  }
 
-function formatRoleLabel(roles) {if (!roles || !roles.length) return "";
+  if (quantity > 0 && roles.includes("Optional")) {
+    roles = roles.filter((r) => r !== "Optional");
+  }
 
-const normalizedRoles = roles.map((role) => String(role || "").trim().toLowerCase()).filter(Boolean);
+  return {
+    ...item,
+    name,
+    unit,
+    quantity,
+    category,
+    roles,
+    notes,
+  };
+}
 
-if (normalizedRoles.includes("optional") &&normalizedRoles.every((role) => role === "optional")) {return " (optional)";}if (normalizedRoles.includes("for serving")) return " (for serving)";if (normalizedRoles.includes("serving")) return " (for serving)";if (normalizedRoles.includes("topping")) return " (topping)";if (normalizedRoles.includes("garnish")) return " (garnish)";if (normalizedRoles.includes("to taste")) return " (to taste)";
+function formatQty(value) {
+  if (
+    value === null ||
+    value === undefined ||
+    value === "" ||
+    Number(value) === 0
+  ) {
+    return "";
+  }
 
-return "";}
+  const n = Number(value);
 
-function formatNotesLabel(notes) {if (!notes || !notes.length) return "";
+  if (Number.isNaN(n)) {
+    return String(value);
+  }
 
-const hiddenNotes = new Set(["chopped","diced","sliced","thinly sliced","minced","finely minced","halved","grated","squeezed dry","wedges","cut into wedges","small","medium","large","fresh","extra","garnish","for serving","topping"]);
+  const rounded = Math.round(n * 100) / 100;
 
-const cleanNotes = notes.map((note) => String(note || "").trim()).filter(Boolean).filter((note) => !hiddenNotes.has(note.toLowerCase()));
+  if (rounded >= 0.55 && rounded <= 0.7) {
+    return "2/3";
+  }
 
-if (!cleanNotes.length) return "";
+  const whole = Math.floor(rounded);
+  const decimal = rounded - whole;
 
-return  (${cleanNotes.join("; ")});}
+  let fraction = "";
 
-function cleanDisplayLine(line) {return String(line || "").replace(/\bwhole lime juice\b/gi, "whole lime").replace(/\bwhole lemon juice\b/gi, "whole lemon").replace(/\blime lime juice\b/gi, "lime").replace(/\blemon lemon juice\b/gi, "lemon").replace(/\bwhole whole\b/gi, "whole").replace(/\bcup cup\b/gi, "cup").replace(/\btbsp tbsp\b/gi, "tbsp").replace(/\btsp tsp\b/gi, "tsp").replace(/\s+/g, " ").trim();}
+  if (decimal >= 0.12 && decimal < 0.2) fraction = "1/8";
+  else if (decimal >= 0.2 && decimal < 0.3) fraction = "1/4";
+  else if (decimal >= 0.3 && decimal < 0.4) fraction = "1/3";
+  else if (decimal >= 0.45 && decimal < 0.55) fraction = "1/2";
+  else if (decimal >= 0.6 && decimal < 0.7) fraction = "2/3";
+  else if (decimal >= 0.7 && decimal < 0.8) fraction = "3/4";
+  else if (decimal >= 0.8 && decimal < 0.9) fraction = "7/8";
 
-function escapeHtml(str) {return String(str).replaceAll("&", "&").replaceAll("<", "<").replaceAll(">", ">").replaceAll('"', """).replaceAll("'", "'");}
+  if (whole === 0) {
+    return fraction || String(rounded);
+  }
 
-function chunkString(str, maxLength) {const chunks = [];for (let i = 0; i < str.length; i += maxLength) {chunks.push(str.slice(i, i + maxLength));}return chunks;}
+  return fraction ? `${whole} ${fraction}` : String(whole);
+}
+
+function formatRoleLabel(roles) {
+  if (!roles || !roles.length) {
+    return "";
+  }
+
+  const normalizedRoles = roles
+    .map((role) => String(role || "").trim().toLowerCase())
+    .filter(Boolean);
+
+  if (
+    normalizedRoles.includes("optional") &&
+    normalizedRoles.every((role) => role === "optional")
+  ) {
+    return " (optional)";
+  }
+
+  if (normalizedRoles.includes("for serving")) return " (for serving)";
+  if (normalizedRoles.includes("serving")) return " (for serving)";
+  if (normalizedRoles.includes("topping")) return " (topping)";
+  if (normalizedRoles.includes("garnish")) return " (garnish)";
+  if (normalizedRoles.includes("to taste")) return " (to taste)";
+
+  return "";
+}
+
+function formatNotesLabel(notes) {
+  if (!notes || !notes.length) {
+    return "";
+  }
+
+  const hiddenNotes = new Set([
+    "chopped",
+    "diced",
+    "sliced",
+    "thinly sliced",
+    "minced",
+    "finely minced",
+    "halved",
+    "grated",
+    "squeezed dry",
+    "wedges",
+    "cut into wedges",
+    "small",
+    "medium",
+    "large",
+    "fresh",
+    "extra",
+    "garnish",
+    "for serving",
+    "topping",
+  ]);
+
+  const cleanNotes = notes
+    .map((note) => String(note || "").trim())
+    .filter(Boolean)
+    .filter((note) => !hiddenNotes.has(note.toLowerCase()));
+
+  if (!cleanNotes.length) {
+    return "";
+  }
+
+  return ` (${cleanNotes.join("; ")})`;
+}
+
+function cleanDisplayLine(line) {
+  return String(line || "")
+    .replace(/\bwhole lime juice\b/gi, "whole lime")
+    .replace(/\bwhole lemon juice\b/gi, "whole lemon")
+    .replace(/\blime lime juice\b/gi, "lime")
+    .replace(/\blemon lemon juice\b/gi, "lemon")
+    .replace(/\bwhole whole\b/gi, "whole")
+    .replace(/\bcup cup\b/gi, "cup")
+    .replace(/\btbsp tbsp\b/gi, "tbsp")
+    .replace(/\btsp tsp\b/gi, "tsp")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function chunkString(str, maxLength) {
+  const chunks = [];
+
+  for (let i = 0; i < str.length; i += maxLength) {
+    chunks.push(str.slice(i, i + maxLength));
+  }
+
+  return chunks;
+}
