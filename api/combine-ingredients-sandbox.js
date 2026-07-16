@@ -33,6 +33,7 @@ if (!recipeIngredientsDbId) {
 if (!recipeIds.length) {
   return res.status(200).json({
     weekly_meal_plan_id: weeklyMealPlanId,
+    recipe_meta: recipeMeta,
     grouped_categories: {},
     shopping_lines: [],
     shopping_list_html: "",
