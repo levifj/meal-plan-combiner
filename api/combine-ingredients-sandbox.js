@@ -61,6 +61,8 @@ const combined = new Map();
 for (const row of allRows) {
   const p = row.properties || {};
 
+  const recipeId = p["Recipes"]?.relation?.[0]?.id || "";
+
   const ingredientName =
     p["Ingredient Name"]?.rollup?.array?.[0]?.title?.[0]?.plain_text || "";
 
