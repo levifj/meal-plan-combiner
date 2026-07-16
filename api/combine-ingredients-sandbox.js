@@ -98,7 +98,7 @@ const safeQuantity =
 const recipeBaseServings =
   recipeMeta.find((recipe) => recipe.id === recipeId)?.baseServings || 4;
 
-const selectedServings = 6;
+const selectedServings = 4;
 
 const effectiveServings = Math.max(
   recipeBaseServings,
