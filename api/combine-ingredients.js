@@ -209,8 +209,13 @@ return res.status(200).json({
   shopping_list_html_2: htmlChunks[1] || "",
   shopping_list_html_3: htmlChunks[2] || "",
 });
-
-} catch (error) {return res.status(400).json({error: "Invalid request",details: error.message,});}}
+  } catch (error) {
+    return res.status(400).json({
+      error: "Invalid request",
+      details: error.message,
+    });
+  }
+};
 
 async function queryAllNotionRows({ notionApiKey, recipeIngredientsDbId, filter }) {const allRows = [];let startCursor = undefined;
 
