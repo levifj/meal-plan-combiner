@@ -216,6 +216,7 @@ const htmlChunks = chunkString(shoppingListHtml, 1900);
 
 return res.status(200).json({
   weekly_meal_plan_id: weeklyMealPlanId,
+  recipe_meta: recipeMeta,
   grouped_categories: groupedCategories,
   shopping_lines: shoppingLines,
   shopping_list_html: shoppingListHtml,
