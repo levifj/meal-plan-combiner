@@ -189,9 +189,13 @@ listItems.push(`<li>${escapeHtml(line)}</li>`);
 
 }
 
-if (listItems.length) {shoppingListHtmlParts.push(<div class="shopping-category"><h3>${escapeHtml(
-        category
-      )}</h3><ul>${listItems.join("")}</ul></div>);}}
+if (listItems.length) {
+  shoppingListHtmlParts.push(
+    `<div class="shopping-category"><h3>${escapeHtml(
+      category
+    )}</h3><ul>${listItems.join("")}</ul></div>`
+  );
+}
 
 const shoppingListHtml = shoppingListHtmlParts.join("");
 const htmlChunks = chunkString(shoppingListHtml, 1900);
