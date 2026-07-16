@@ -196,6 +196,7 @@ if (listItems.length) {
     )}</h3><ul>${listItems.join("")}</ul></div>`
   );
 }
+}
 
 const shoppingListHtml = shoppingListHtmlParts.join("");
 const htmlChunks = chunkString(shoppingListHtml, 1900);
