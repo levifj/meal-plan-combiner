@@ -1,0 +1,24 @@
+{
+  "name": "meal-plan-combiner",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/levifj/meal-plan-combiner.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/levifj/meal-plan-combiner/issues"
+  },
+  "homepage": "https://github.com/levifj/meal-plan-combiner#readme",
+  "dependencies": {
+    "@vercel/blob": "^2.6.1"
+  }
+}
