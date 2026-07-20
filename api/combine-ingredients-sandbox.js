@@ -59,6 +59,12 @@ const allRows = await queryAllNotionRows({
 
 const combined = new Map();
 
+const scaledRecipes = new Map();
+
+for (const recipe of recipeMeta) {
+  scaledRecipes.set(recipe.id, []);
+}
+
 for (const row of allRows) {
   const p = row.properties || {};
 
@@ -115,6 +121,18 @@ const converted = convertUnit(
   normalizedUnit,
   normalizedName
 );
+
+const scaledRecipeItems = scaledRecipes.get(recipeId);
+
+if (scaledRecipeItems) {
+  scaledRecipeItems.push({
+    name: ingredientName,
+    quantity: Number(scaledQuantity.toFixed(2)),
+    unit: normalizedUnit,
+    role: ingredientRole,
+    notes,
+  });
+}
 
   let normalizedNameForCombine = normalizedName;
 
@@ -247,6 +265,22 @@ return res.status(200).json({
   shopping_list_html_1: htmlChunks[0] || "",
   shopping_list_html_2: htmlChunks[1] || "",
   shopping_list_html_3: htmlChunks[2] || "",
+
+  scaled_recipe_1_ingredients: formatScaledRecipeIngredients(
+    scaledRecipes.get(recipeMeta[0]?.id) || []
+  ),
+  scaled_recipe_2_ingredients: formatScaledRecipeIngredients(
+    scaledRecipes.get(recipeMeta[1]?.id) || []
+  ),
+  scaled_recipe_3_ingredients: formatScaledRecipeIngredients(
+    scaledRecipes.get(recipeMeta[2]?.id) || []
+  ),
+  scaled_recipe_4_ingredients: formatScaledRecipeIngredients(
+    scaledRecipes.get(recipeMeta[3]?.id) || []
+  ),
+  scaled_recipe_5_ingredients: formatScaledRecipeIngredients(
+    scaledRecipes.get(recipeMeta[4]?.id) || []
+  ),
 });
   } catch (error) {
     return res.status(400).json({
@@ -707,6 +741,28 @@ function cleanDisplayLine(line) {
     .replace(/\btsp tsp\b/gi, "tsp")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function formatScaledRecipeIngredients(items) {
+  return items
+    .map((item) => {
+      const qty = formatQty(item.quantity);
+
+      const unit = item.unit
+        ? `${item.unit} `
+        : "";
+
+      const notes = item.notes
+        ? `, ${item.notes}`
+        : "";
+
+      const role = item.role
+        ? ` (${item.role})`
+        : "";
+
+      return `${qty}${qty ? " " : ""}${unit}${item.name}${notes}${role}`.trim();
+    })
+    .join("\n");
 }
 
 function escapeHtml(str) {
