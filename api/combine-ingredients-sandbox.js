@@ -257,7 +257,9 @@ const normalizedUnit = (item.unit || "").trim().toLowerCase();
 const normalizedName = (item.name || "").trim().toLowerCase();
 
 const displayUnit =
-  normalizedUnit && normalizedUnit !== normalizedName ? item.unit : "";
+  normalizedUnit && normalizedUnit !== normalizedName
+    ? formatDisplayUnit(item.unit, item.quantity)
+    : "";
 
 const nameLower = String(item.name || "").toLowerCase();const roleLower = (item.roles || []).map((r) => String(r).toLowerCase());
 
@@ -654,6 +656,33 @@ function makeShopperFriendlyItem(item) {
     roles,
     notes,
   };
+}
+
+function formatDisplayUnit(unit, quantity) {
+  const u = String(unit || "").trim();
+
+  if (!u) {
+    return "";
+  }
+
+  const pluralUnits = {
+    cup: "cups",
+    clove: "cloves",
+    slice: "slices",
+    can: "cans",
+    bunch: "bunches",
+    jar: "jars",
+    package: "packages",
+    pint: "pints",
+  };
+
+  const isSingular = Math.abs(Number(quantity) - 1) < 0.001;
+
+  if (isSingular) {
+    return u;
+  }
+
+  return pluralUnits[u.toLowerCase()] || u;
 }
 
 function formatQty(value) {
