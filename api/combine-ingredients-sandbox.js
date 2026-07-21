@@ -789,10 +789,18 @@ function formatNotesLabel(notes) {
     "topping",
   ]);
 
-  const cleanNotes = notes
-    .map((note) => String(note || "").trim())
-    .filter(Boolean)
-    .filter((note) => !hiddenNotes.has(note.toLowerCase()));
+  const cleanNotes = [
+  ...new Set(
+    notes
+      .flatMap((note) =>
+        String(note || "")
+          .split(";")
+          .map((part) => part.trim())
+      )
+      .filter(Boolean)
+      .filter((note) => !hiddenNotes.has(note.toLowerCase()))
+  ),
+];
 
   if (!cleanNotes.length) {
     return "";
