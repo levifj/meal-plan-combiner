@@ -676,7 +676,7 @@ function formatDisplayUnit(unit, quantity) {
     pint: "pints",
   };
 
-  const isSingular = Math.abs(Number(quantity) - 1) < 0.001;
+  const isSingular = Number(quantity) <= 1;
 
   if (isSingular) {
     return u;
