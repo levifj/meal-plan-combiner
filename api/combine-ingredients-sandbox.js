@@ -673,29 +673,39 @@ function formatQty(value) {
   }
 
   const rounded = Math.round(n * 100) / 100;
-
-  if (rounded >= 0.55 && rounded <= 0.7) {
-    return "2/3";
-  }
-
   const whole = Math.floor(rounded);
   const decimal = rounded - whole;
 
-  let fraction = "";
+  const fractions = [
+    { value: 0.125, label: "1/8" },
+    { value: 1 / 6, label: "1/6" },
+    { value: 0.25, label: "1/4" },
+    { value: 1 / 3, label: "1/3" },
+    { value: 0.5, label: "1/2" },
+    { value: 2 / 3, label: "2/3" },
+    { value: 0.75, label: "3/4" },
+    { value: 5 / 6, label: "5/6" },
+    { value: 0.875, label: "7/8" },
+  ];
 
-  if (decimal >= 0.12 && decimal < 0.2) fraction = "1/8";
-  else if (decimal >= 0.2 && decimal < 0.3) fraction = "1/4";
-  else if (decimal >= 0.3 && decimal < 0.4) fraction = "1/3";
-  else if (decimal >= 0.45 && decimal < 0.55) fraction = "1/2";
-  else if (decimal >= 0.6 && decimal < 0.7) fraction = "2/3";
-  else if (decimal >= 0.7 && decimal < 0.8) fraction = "3/4";
-  else if (decimal >= 0.8 && decimal < 0.9) fraction = "7/8";
+  const closest = fractions.reduce((best, fraction) =>
+    Math.abs(fraction.value - decimal) <
+    Math.abs(best.value - decimal)
+      ? fraction
+      : best
+  );
 
-  if (whole === 0) {
-    return fraction || String(rounded);
+  const isClose = Math.abs(closest.value - decimal) < 0.04;
+
+  if (!isClose) {
+    return String(rounded);
   }
 
-  return fraction ? `${whole} ${fraction}` : String(whole);
+  if (whole === 0) {
+    return closest.label;
+  }
+
+  return `${whole} ${closest.label}`;
 }
 
 function formatRoleLabel(roles) {
