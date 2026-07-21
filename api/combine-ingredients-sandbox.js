@@ -251,7 +251,11 @@ for (const item of groupedCategories[category]) {const isDisplayOnlyItem =item.r
 
 if ((!item.quantity || item.quantity <= 0) && !isDisplayOnlyItem) continue;
 
-const qty = formatQty(item.quantity);
+const qty =
+  String(item.unit || "").trim().toLowerCase() === "tsp" &&
+  Math.abs(item.quantity - Math.round(item.quantity)) <= 0.09
+    ? String(Math.round(item.quantity))
+    : formatQty(item.quantity);
 
 const normalizedUnit = (item.unit || "").trim().toLowerCase();
 const normalizedName = (item.name || "").trim().toLowerCase();
