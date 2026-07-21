@@ -695,7 +695,7 @@ function formatQty(value) {
       : best
   );
 
-  const isClose = Math.abs(closest.value - decimal) < 0.04;
+  const isClose = Math.abs(closest.value - decimal) <= 0.041;
 
   if (!isClose) {
     return String(rounded);
