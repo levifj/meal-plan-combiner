@@ -272,8 +272,27 @@ if ((!item.quantity || item.quantity <= 0) &&roleLower.includes("to taste") &&(n
 const roleLabel = formatRoleLabel(item.roles);
 const noteLabel = formatNotesLabel(item.notes);
 
+let displayName = item.name;
+
+if (
+  normalizedUnit === "whole" &&
+  Number(item.quantity) > 1
+) {
+  const pluralNames = {
+    cucumber: "cucumbers",
+    onion: "onions",
+    "green onions": "green onions",
+    "corn tortillas": "corn tortillas",
+    lime: "limes",
+    lemon: "lemons",
+  };
+
+  displayName =
+    pluralNames[normalizedName] || item.name;
+}
+
 let line = `${qty}${qty && displayUnit ? ` ${displayUnit}` : ""} ${
-  item.name
+  displayName
 }${noteLabel}${roleLabel}`.trim();
 
 line = cleanDisplayLine(line);
@@ -664,6 +683,10 @@ function makeShopperFriendlyItem(item) {
 
 function formatDisplayUnit(unit, quantity) {
   const u = String(unit || "").trim();
+
+  if (u.toLowerCase() === "whole") {
+  return "";
+}
 
   if (!u) {
     return "";
