@@ -4,7 +4,32 @@ const weeklyMealPlanId = body.weekly_meal_plan_id || "";
 const recipeServingsPairs = body.recipe_servings_pairs || "";
 const selectedServings = Number(body.selected_servings) || 4;
 
-const recipeMeta = recipeServingsPairs
+const servingsLookup = new Map(
+  recipeServingsPairs
+    .split(",")
+    .map((pair) => pair.trim())
+    .filter(Boolean)
+    .map((pair) => {
+      const [id, servings] = pair.split("|");
+
+      return [
+        id?.trim(),
+        Number(servings) || 4,
+      ];
+    })
+);
+
+const explicitRecipeIds = [
+  body.recipe_1_id,
+  body.recipe_2_id,
+  body.recipe_3_id,
+  body.recipe_4_id,
+  body.recipe_5_id,
+]
+  .map((id) => String(id || "").trim())
+  .filter(Boolean);
+
+const fallbackRecipeMeta = recipeServingsPairs
   .split(",")
   .map((pair) => pair.trim())
   .filter(Boolean)
@@ -17,6 +42,14 @@ const recipeMeta = recipeServingsPairs
     };
   })
   .filter((recipe) => recipe.id);
+
+const recipeMeta =
+  explicitRecipeIds.length === 5
+    ? explicitRecipeIds.map((id) => ({
+        id,
+        baseServings: servingsLookup.get(id) || 4,
+      }))
+    : fallbackRecipeMeta;
 
 const recipeIds = recipeMeta.map((recipe) => recipe.id);
 
