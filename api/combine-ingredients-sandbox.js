@@ -204,17 +204,57 @@ const key = `${normalizedNameForCombine}__${unitForCombine}__${normalizedCategor
 
 const groupedCategories = {};
 
-for (const item of combined.values()) {const isDisplayOnlyItem =item.roles?.has("For Serving") ||item.roles?.has("Optional") ||item.roles?.has("Topping") ||item.roles?.has("Garnish") ||item.roles?.has("To Taste");
+// Track ingredients that already have a quantified entry.
+// This lets us suppress duplicate zero-quantity role-only versions
+// such as "black pepper (To Taste)" when quantified black pepper exists.
+const quantifiedIngredientKeys = new Set();
 
-if (item.quantity <= 0 && !isDisplayOnlyItem) continue;
+for (const item of combined.values()) {
+  if (item.quantity > 0) {
+    const ingredientKey = `${normalizeIngredientName(item.name)}__${item.category}`;
+    quantifiedIngredientKeys.add(ingredientKey);
+  }
+}
 
-const finalized = finalizeUnit(item);const shopperItem = makeShopperFriendlyItem(finalized);
+for (const item of combined.values()) {
+  const isDisplayOnlyItem =
+    item.roles?.has("For Serving") ||
+    item.roles?.has("Optional") ||
+    item.roles?.has("Topping") ||
+    item.roles?.has("Garnish") ||
+    item.roles?.has("To Taste");
 
-if (!shopperItem) continue;
+  if (item.quantity <= 0 && !isDisplayOnlyItem) continue;
 
-if (!groupedCategories[shopperItem.category]) {groupedCategories[shopperItem.category] = [];}
+  const ingredientKey = `${normalizeIngredientName(item.name)}__${item.category}`;
 
-groupedCategories[shopperItem.category].push({name: shopperItem.name,quantity: Number(shopperItem.quantity.toFixed(2)),unit: shopperItem.unit,roles: shopperItem.roles,notes: shopperItem.notes,});}
+  // If this is an unquantified role-only item and the same ingredient
+  // already exists with a real quantity, suppress the duplicate.
+  if (
+    item.quantity <= 0 &&
+    isDisplayOnlyItem &&
+    quantifiedIngredientKeys.has(ingredientKey)
+  ) {
+    continue;
+  }
+
+  const finalized = finalizeUnit(item);
+  const shopperItem = makeShopperFriendlyItem(finalized);
+
+  if (!shopperItem) continue;
+
+  if (!groupedCategories[shopperItem.category]) {
+    groupedCategories[shopperItem.category] = [];
+  }
+
+  groupedCategories[shopperItem.category].push({
+    name: shopperItem.name,
+    quantity: Number(shopperItem.quantity.toFixed(2)),
+    unit: shopperItem.unit,
+    roles: shopperItem.roles,
+    notes: shopperItem.notes,
+  });
+} 
 
 const categoryOrder = [
   "Produce",
@@ -728,33 +768,44 @@ function formatQty(value) {
     return String(value);
   }
 
-  const rounded = Math.round(n * 100) / 100;
-  const whole = Math.floor(rounded);
-  const decimal = rounded - whole;
-
-  const fractions = [
+  // Round to practical kitchen measurements only.
+  // No 1/6 or 5/6 fractions.
+  const allowedFractions = [
+    { value: 0, label: "" },
     { value: 0.125, label: "1/8" },
-    { value: 1 / 6, label: "1/6" },
     { value: 0.25, label: "1/4" },
     { value: 1 / 3, label: "1/3" },
     { value: 0.5, label: "1/2" },
     { value: 2 / 3, label: "2/3" },
     { value: 0.75, label: "3/4" },
-    { value: 5 / 6, label: "5/6" },
     { value: 0.875, label: "7/8" },
+    { value: 1, label: "" },
   ];
 
-  const closest = fractions.reduce((best, fraction) =>
+  const whole = Math.floor(n);
+  const decimal = n - whole;
+
+  const closest = allowedFractions.reduce((best, fraction) =>
     Math.abs(fraction.value - decimal) <
     Math.abs(best.value - decimal)
       ? fraction
       : best
   );
 
-  const isClose = Math.abs(closest.value - decimal) <= 0.041;
+  // If the fractional part rounds up to a whole number,
+  // carry it into the whole-number portion.
+  if (closest.value === 1) {
+    return String(whole + 1);
+  }
 
-  if (!isClose) {
-    return String(rounded);
+  // If it rounds to no fractional portion, return the whole number.
+  if (closest.value === 0) {
+    // Avoid turning a very small positive quantity into nothing.
+    if (whole === 0 && n > 0) {
+      return "1/8";
+    }
+
+    return String(whole);
   }
 
   if (whole === 0) {
@@ -816,18 +867,42 @@ function formatNotesLabel(notes) {
     "topping",
   ]);
 
-  const cleanNotes = [
-  ...new Set(
-    notes
-      .flatMap((note) =>
-        String(note || "")
-          .split(";")
-          .map((part) => part.trim())
-      )
-      .filter(Boolean)
-      .filter((note) => !hiddenNotes.has(note.toLowerCase()))
-  ),
-];
+  const rawNotes = notes
+    .flatMap((note) =>
+      String(note || "")
+        .split(";")
+        .map((part) => part.trim())
+    )
+    .filter(Boolean)
+    .filter((note) => !hiddenNotes.has(note.toLowerCase()));
+
+  const cleanNotes = [];
+
+  for (const note of rawNotes) {
+    const normalized = note
+      .toLowerCase()
+      .replace(/\s+/g, " ")
+      .replace(/^or\s+/, "")
+      .trim();
+
+    const isDuplicate = cleanNotes.some((existing) => {
+      const existingNormalized = existing
+        .toLowerCase()
+        .replace(/\s+/g, " ")
+        .replace(/^or\s+/, "")
+        .trim();
+
+      return (
+        existingNormalized === normalized ||
+        existingNormalized.includes(normalized) ||
+        normalized.includes(existingNormalized)
+      );
+    });
+
+    if (!isDuplicate) {
+      cleanNotes.push(note);
+    }
+  }
 
   if (!cleanNotes.length) {
     return "";
@@ -846,6 +921,7 @@ function cleanDisplayLine(line) {
     .replace(/\bcup cup\b/gi, "cup")
     .replace(/\btbsp tbsp\b/gi, "tbsp")
     .replace(/\btsp tsp\b/gi, "tsp")
+    .replace(/\begg egg\b/gi, "eggs")
     .replace(/\s+/g, " ")
     .trim();
 }
