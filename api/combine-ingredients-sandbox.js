@@ -709,6 +709,10 @@ function makeShopperFriendlyItem(item) {
   if (quantity > 0 && roles.includes("Optional")) {
     roles = roles.filter((r) => r !== "Optional");
   }
+  
+  if (quantity > 0 && roles.includes("To Taste")) {
+  roles = roles.filter((r) => r !== "To Taste");
+  }
 
   return {
     ...item,
